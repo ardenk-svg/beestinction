@@ -10,7 +10,21 @@
 #include <ctime>
 using namespace std;
 
-void bee() {
-    int bee = 1;
-    cout << bee << endl;
-}
+class Bee {
+public:
+    int hunger = 10;
+    bool holding_honey = false;
+    bool alive = true;
+
+
+    Bee() { // needs constructor
+        return;
+    };
+};
+
+class Flower_patch {
+    public:
+        Flower_patch() { // needs constructor
+            return;
+        }
+};
