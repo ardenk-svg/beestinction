@@ -1,0 +1,18 @@
+// The simulation: all game state and rules. Pure Java with NO libGDX dependency, so it runs headless
+// in tests and CI. See CLAUDE.md A.5 for the hard rules (integer-only, GameRandom only, deterministic iteration).
+eclipse.project.name = appName + '-sim'
+
+dependencies {
+  // Intentionally empty. Do not add libGDX (or anything else) here.
+}
+
+jar {
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// Some sim tests read files outside the module: the real test map (TestMapCopyTest) and the sim sources
+// themselves (HardRulesTest).
+tasks.withType(Test).configureEach {
+  systemProperty 'beestinction.assetsDir', rootProject.file('assets').absolutePath
+  systemProperty 'beestinction.simSourceDir', project.file('src/main/java').absolutePath
+}

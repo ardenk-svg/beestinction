@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""Generates the placeholder test map from one definition, so its three copies always agree:
+
+  assets/maps/test_map.tmx           the Tiled map the game loads (CLAUDE.md D.6 conventions)
+  assets/maps/terrain_tiles.png      the 8-tile terrain tileset it uses (solid placeholder colors)
+  sim/src/test/java/.../testutil/TestMapCopy.java
+                                     a pure-Java copy for headless tests (SmokeTest), checked against the
+                                     .tmx by TestMapCopyTest
+
+Real maps should be drawn in Tiled (https://www.mapeditor.org/) by hand; this script only exists for the
+walking-skeleton map. Run from the repository root:  python3 tools/generate_test_map.py
+"""
+import os
+import struct
+import zlib
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+MAP_ID = "test_map"
+DISPLAY_NAME = "Test Meadow"
+DESCRIPTION = "A small placeholder map for the walking skeleton: meadow, forest, orchard, farm, a lake, and a town."
+WIDTH = 40
+HEIGHT = 40
+TILE_PX = 16
+MILLI_MILES_PER_TILE = 200  # 40 tiles x 0.2 mi = 8 mi across: a 4-mile radius around the hive
+HIVE = (20, 20)             # tile coordinates, (0, 0) = bottom-left, y up (libGDX convention)
+
+# Tile types in tileset order: (name, letter for the Java copy, RGB color)
+TILE_TYPES = [
+    ("GRASS", "G", (126, 178, 85)),
+    ("FOREST", "F", (46, 105, 52)),
+    ("FARM", "A", (205, 170, 105)),
+    ("ORCHARD", "O", (150, 170, 70)),
+    ("WATER", "W", (64, 120, 200)),
+    ("URBAN", "U", (150, 150, 150)),
+    ("ROAD", "R", (90, 90, 90)),
+    ("WETLAND", "M", (80, 150, 130)),
+]
+
+# Patches: (Tiled object id, species id, size, x, y) in y-up tile coordinates. Object id 1 is the hive.
+PATCHES = [
+    (2, "dandelion", 3, 22, 22),
+    (3, "clover", 4, 16, 23),
+    (4, "apple_blossom", 5, 31, 31),
+    (5, "pumpkin", 4, 32, 8),
+    (6, "wild_bergamot", 2, 11, 15),
+    (7, "goldenrod", 4, 7, 31),
+    (8, "new_england_aster", 3, 34, 20),
+    (9, "clover", 2, 20, 5),
+]
+
+
+def terrain(x, y):
+    """Returns the tile type name at (x, y), y up."""
+    d2 = (x - 8) ** 2 + (y - 8) ** 2
+    if d2 <= 20:
+        return "WATER"
+    if y == 17 or x == 24:
+        return "ROAD"
+    if d2 <= 34:
+        return "WETLAND"
+    if 2 <= x <= 14 and 26 <= y <= 37:
+        return "FOREST"
+    if 27 <= x <= 36 and 27 <= y <= 35:
+        return "ORCHARD"
+    if 26 <= x <= 38 and 3 <= y <= 13:
+        return "FARM"
+    if 13 <= x <= 18 and 11 <= y <= 15:
+        return "URBAN"
+    return "GRASS"
+
+
+def png_bytes(width, height, rgba_rows):
+    raw = b"".join(b"\x00" + bytes(row) for row in rgba_rows)
+
+    def chunk(kind, data):
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 9))
+            + chunk(b"IEND", b""))
+
+
+def write_tileset(path):
+    width = TILE_PX * len(TILE_TYPES)
+    rows = []
+    for py in range(TILE_PX):
+        row = []
+        for _, _, (r, g, b) in TILE_TYPES:
+            for px in range(TILE_PX):
+                edge = px == 0 or py == 0 or px == TILE_PX - 1 or py == TILE_PX - 1
+                k = 0.85 if edge else 1.0
+                row += [int(r * k), int(g * k), int(b * k), 255]
+        rows.append(row)
+    with open(path, "wb") as f:
+        f.write(png_bytes(width, TILE_PX, rows))
+
+
+def tmx_point(x, y):
+    """Tiled stores object positions in pixels with y pointing down; we place points at tile centers."""
+    return x * TILE_PX + TILE_PX // 2, (HEIGHT - 1 - y) * TILE_PX + TILE_PX // 2
+
+
+def write_tmx(path):
+    gid = {name: i + 1 for i, (name, _, _) in enumerate(TILE_TYPES)}
+    lines = []
+    for row in range(HEIGHT):  # Tiled rows go top to bottom
+        y = HEIGHT - 1 - row
+        cells = [str(gid[terrain(x, y)]) for x in range(WIDTH)]
+        lines.append(",".join(cells) + ("," if row < HEIGHT - 1 else ""))
+    tiles = "\n".join(
+        f'  <tile id="{i}">\n   <properties>\n    <property name="type" value="{name}"/>\n   </properties>\n  </tile>'
+        for i, (name, _, _) in enumerate(TILE_TYPES))
+    hx, hy = tmx_point(*HIVE)
+    patch_objs = []
+    for oid, species, size, x, y in PATCHES:
+        px, py = tmx_point(x, y)
+        patch_objs.append(
+            f'  <object id="{oid}" name="{species}" x="{px}" y="{py}">\n'
+            f'   <properties>\n'
+            f'    <property name="size" type="int" value="{size}"/>\n'
+            f'    <property name="species" value="{species}"/>\n'
+            f'   </properties>\n'
+            f'   <point/>\n'
+            f'  </object>')
+    next_id = max(p[0] for p in PATCHES) + 1
+    tileset_cols = len(TILE_TYPES)
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!-- GENERATED by tools/generate_test_map.py. Edit the script (or replace this map with one drawn in Tiled). -->
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="{WIDTH}" height="{HEIGHT}" tilewidth="{TILE_PX}" tileheight="{TILE_PX}" infinite="0" nextlayerid="4" nextobjectid="{next_id}">
+ <properties>
+  <property name="description" value="{DESCRIPTION}"/>
+  <property name="displayName" value="{DISPLAY_NAME}"/>
+  <property name="id" value="{MAP_ID}"/>
+  <property name="milliMilesPerTile" type="int" value="{MILLI_MILES_PER_TILE}"/>
+ </properties>
+ <tileset firstgid="1" name="terrain" tilewidth="{TILE_PX}" tileheight="{TILE_PX}" tilecount="{tileset_cols}" columns="{tileset_cols}">
+  <image source="terrain_tiles.png" width="{TILE_PX * tileset_cols}" height="{TILE_PX}"/>
+{tiles}
+ </tileset>
+ <layer id="1" name="terrain" width="{WIDTH}" height="{HEIGHT}">
+  <data encoding="csv">
+{chr(10).join(lines)}
+</data>
+ </layer>
+ <objectgroup id="2" name="hive">
+  <object id="1" name="hive" x="{hx}" y="{hy}">
+   <point/>
+  </object>
+ </objectgroup>
+ <objectgroup id="3" name="patches">
+{chr(10).join(patch_objs)}
+ </objectgroup>
+</map>
+"""
+    with open(path, "w", newline="\n") as f:
+        f.write(xml)
+
+
+def write_java_copy(path):
+    letter = {name: ch for name, ch, _ in TILE_TYPES}
+    rows = []
+    for row in range(HEIGHT):
+        y = HEIGHT - 1 - row
+        rows.append('            "' + "".join(letter[terrain(x, y)] for x in range(WIDTH)) + '"')
+    patches = ",\n".join(
+        f'            new PatchSpec({oid}, "{species}", {size}, {x}, {y})' for oid, species, size, x, y in PATCHES)
+    legend = ", ".join(f"{ch} = {name}" for name, ch, _ in TILE_TYPES)
+    java = f"""package com.michiganecodata.beestinction.sim.testutil;
+
+/**
+ * OVERVIEW:      GENERATED by tools/generate_test_map.py -- do not edit by hand.
+ *                A pure-Java copy of assets/maps/test_map.tmx, so headless tests (SmokeTest) can use the real
+ *                placeholder map without libGDX. TestMapCopyTest checks that it still matches the .tmx file.
+ * INVARIANTS:    ROWS_TOP_DOWN has HEIGHT strings of WIDTH letters; row 0 is the TOP row of the map (y = HEIGHT-1).
+ *                Letters: {legend}.
+ * COLLABORATORS: TestFixtures.testMapCopy(), TestMapCopyTest.
+ */
+public final class TestMapCopy {{
+    public static final String ID = "{MAP_ID}";
+    public static final String DISPLAY_NAME = "{DISPLAY_NAME}";
+    public static final String DESCRIPTION = "{DESCRIPTION}";
+    public static final int WIDTH = {WIDTH};
+    public static final int HEIGHT = {HEIGHT};
+    public static final int MILLI_MILES_PER_TILE = {MILLI_MILES_PER_TILE};
+    public static final int HIVE_X = {HIVE[0]};
+    public static final int HIVE_Y = {HIVE[1]};
+
+    public static final String[] ROWS_TOP_DOWN = {{
+{(","+chr(10)).join(rows)}
+    }};
+
+    /** One flower patch: Tiled object id, species id, size, and tile position (y up). */
+    public static final class PatchSpec {{
+        public final int id;
+        public final String species;
+        public final int size;
+        public final int x;
+        public final int y;
+
+        PatchSpec(int id, String species, int size, int x, int y) {{
+            this.id = id;
+            this.species = species;
+            this.size = size;
+            this.x = x;
+            this.y = y;
+        }}
+    }}
+
+    public static final PatchSpec[] PATCHES = {{
+{patches}
+    }};
+
+    private TestMapCopy() {{
+    }}
+}}
+"""
+    with open(path, "w", newline="\n") as f:
+        f.write(java)
+
+
+def main():
+    maps_dir = os.path.join(ROOT, "assets", "maps")
+    os.makedirs(maps_dir, exist_ok=True)
+    write_tileset(os.path.join(maps_dir, "terrain_tiles.png"))
+    write_tmx(os.path.join(maps_dir, "test_map.tmx"))
+    java_dir = os.path.join(ROOT, "sim", "src", "test", "java", "com", "michiganecodata", "beestinction", "sim",
+                            "testutil")
+    os.makedirs(java_dir, exist_ok=True)
+    write_java_copy(os.path.join(java_dir, "TestMapCopy.java"))
+    print("wrote assets/maps/test_map.tmx, assets/maps/terrain_tiles.png, and TestMapCopy.java")
+
+
+if __name__ == "__main__":
+    main()

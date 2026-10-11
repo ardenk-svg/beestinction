@@ -1,0 +1,19 @@
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+eclipse.project.name = appName + '-core'
+
+dependencies {
+  api project(':sim')
+  api "com.badlogicgames.gdx:gdx:$gdxVersion"
+  if(enableGraalNative == 'true') {
+    implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
+  }
+}
+
+jar {
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// Core tests read the real data files in assets/ (see DataFilesTest).
+tasks.withType(Test).configureEach {
+  systemProperty 'beestinction.assetsDir', rootProject.file('assets').absolutePath
+}

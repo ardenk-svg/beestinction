@@ -1,0 +1,110 @@
+buildscript {
+  repositories {
+    mavenCentral()
+    gradlePluginPortal()
+    mavenLocal()
+    google()
+    maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
+  }
+  dependencies {
+
+  }
+}
+
+allprojects {
+  apply plugin: 'eclipse'
+  apply plugin: 'idea'
+
+  // This allows you to "Build and run using IntelliJ IDEA", an option in IDEA's Settings.
+  idea {
+    module {
+      outputDir = file('build/classes/java/main')
+      testOutputDir = file('build/classes/java/test')
+    }
+  }
+}
+
+configure(subprojects) {
+  apply plugin: 'java-library'
+  // DECISION: Java 17 everywhere. gdx-liftoff's TeaVM module requires at least 17, and using the same level in
+  // every module keeps one set of language rules for the whole team. Check TeaVM's supported JDK classes
+  // (https://teavm.org/jcl-report/recent/jcl.html) before using newer library APIs in sim or core.
+  java.sourceCompatibility = 17
+  java.targetCompatibility = 17
+
+  compileJava {
+    options.incremental = true
+    options.encoding = 'UTF-8'
+  }
+  compileTestJava {
+    options.encoding = 'UTF-8'
+  }
+}
+
+subprojects {
+  version = "$projectVersion"
+  ext.appName = 'Beestinction'
+  repositories {
+    mavenCentral()
+    // You may want to remove the following line if you have errors downloading dependencies.
+    mavenLocal()
+    maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
+    maven { url = 'https://jitpack.io' }
+    maven { url = 'https://teavm.org/maven/repository/' }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Tests (JUnit 5) for the modules that have them. See README "Testing" for the workflow.
+//   test        - everything except @Tag("pending") and @Tag("smoke"). This is what CI requires.
+//   pendingTest - only @Tag("pending"): tests for features that are not implemented yet.
+//   smokeTest   - @Tag("smoke") tests that are not also @Tag("pending"): long headless games.
+// ---------------------------------------------------------------------------------------------------------------
+configure([project(':sim'), project(':core')]) {
+  dependencies {
+    testImplementation platform("org.junit:junit-bom:$junitVersion")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+  }
+
+  tasks.withType(Test).configureEach {
+    testLogging {
+      events 'failed', 'skipped'
+      exceptionFormat = 'full'
+      showStandardStreams = false
+    }
+  }
+
+  tasks.named('test', Test) {
+    useJUnitPlatform {
+      excludeTags 'pending', 'smoke'
+    }
+  }
+
+  tasks.register('pendingTest', Test) {
+    description = 'Runs only tests tagged "pending" (features that are not implemented yet).'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+      includeTags 'pending'
+    }
+    failOnNoDiscoveredTests = false
+    // Pending tests are expected to fail; always rerun them so the report is current.
+    outputs.upToDateWhen { false }
+  }
+
+  tasks.register('smokeTest', Test) {
+    description = 'Runs tests tagged "smoke" that are not also tagged "pending" (long headless games).'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+      includeTags 'smoke'
+      excludeTags 'pending'
+    }
+    failOnNoDiscoveredTests = false
+  }
+}
+
+eclipse.project.name = 'Beestinction' + '-parent'

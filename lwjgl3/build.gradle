@@ -1,0 +1,99 @@
+// Desktop launcher (LWJGL3). Based on the gdx-liftoff template.
+// Differences from the liftoff output: the construo native-packaging plugin and GraalVM native-image setup were
+// left out (we ship on the web), and `run` uses the repository root as its working directory so that
+// LocalFileLogUploader writes to <repo>/logs/ instead of into assets/.
+plugins {
+  id "application"
+}
+
+sourceSets.main.resources.srcDirs += [ rootProject.file('assets').path ]
+application.mainClass = 'com.michiganecodata.beestinction.lwjgl3.Lwjgl3Launcher'
+application.applicationName = appName
+eclipse.project.name = appName + '-lwjgl3'
+if (JavaVersion.current().isJava9Compatible()) {
+        compileJava.options.release.set(17)
+}
+
+dependencies {
+  implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+  implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+  implementation project(':core')
+
+  // Forces LWJGL3 to use at least $lwjgl3Version, currently 3.4.3, to avoid warnings on Java 25 and up.
+  constraints{
+    implementation("org.lwjgl:lwjgl:$lwjgl3Version")
+    implementation("org.lwjgl:lwjgl-glfw:$lwjgl3Version")
+    implementation("org.lwjgl:lwjgl-jemalloc:$lwjgl3Version")
+    implementation("org.lwjgl:lwjgl-openal:$lwjgl3Version")
+    implementation("org.lwjgl:lwjgl-opengl:$lwjgl3Version")
+    implementation("org.lwjgl:lwjgl-stb:$lwjgl3Version")
+  }
+}
+
+def os = System.properties['os.name'].toLowerCase(Locale.ROOT)
+
+run {
+  // Internal files (assets) are found on the classpath, so the working directory can be the repo root.
+  workingDir = rootProject.projectDir
+// You can uncomment the next line if your IDE claims a build failure even when the app closed properly.
+  //setIgnoreExitValue(true)
+// The next two jvmArgs additions help LWJGL3 on JDK 24 and higher.
+  jvmArgs += "--enable-native-access=ALL-UNNAMED"
+  jvmArgs += "--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED"
+// On macOS, we need to set this for the run task to allow debugging in IDEA or AS to work.
+  if (os.contains('mac')) jvmArgs += "-XstartOnFirstThread"
+}
+
+jar {
+// sets the name of the .jar file this produces to the name of the game or app, with the version after.
+  archiveFileName.set("${appName}-${projectVersion}.jar")
+// the duplicatesStrategy matters starting in Gradle 7.0; this setting works.
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  dependsOn configurations.runtimeClasspath
+  from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+// these "exclude" lines remove some unnecessary duplicate files in the output JAR.
+  exclude('META-INF/INDEX.LIST', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA')
+  dependencies {
+    exclude('META-INF/INDEX.LIST', 'META-INF/maven/**')
+  }
+// Setting the manifest makes the JAR runnable.
+// Enabling native access helps avoid a warning when Java 24 or later runs the JAR.
+// Setting Multi-Release to true allows LWJGL3 to use different classes on recent Java versions.
+// This setting for Add-Exports ensures a warning on recent JDKs is avoided by LWJGL 3.4.2 and later.
+  manifest {
+    attributes 'Main-Class': application.mainClass, 'Enable-Native-Access': 'ALL-UNNAMED', 'Multi-Release': 'true', 'Add-Exports': 'java.base/jdk.internal.misc'
+  }
+// this last step may help on some OSes that need extra instruction to make runnable JARs.
+  doLast {
+    file(archiveFile).setExecutable(true, false)
+  }
+}
+
+// Equivalent to the jar task; here for compatibility with gdx-setup.
+tasks.register('dist') {
+  dependsOn 'jar'
+}
+
+distributions {
+  main {
+    contents {
+      into('libs') {
+        project.configurations.runtimeClasspath.files.findAll { file ->
+          file.getName() != project.tasks.jar.outputs.files.singleFile.name
+        }.each { file ->
+          exclude file.name
+        }
+      }
+    }
+  }
+}
+
+startScripts.dependsOn(':lwjgl3:jar')
+startScripts.classpath = project.tasks.jar.outputs.files
+
+// Helps if debugging on Linux with an Nvidia GPU.
+// This means StartupHelper won't try to restart the JVM, which can prevent debugging.
+// This only applies to Gradle tasks, not main methods debugged when launching a main() method directly.
+tasks.withType(JavaExec.class).configureEach {
+  environment("__GL_THREADED_OPTIMIZATIONS", 0)
+}

@@ -1,0 +1,57 @@
+# Builds the TeaVM web app and publishes it to GitHub Pages on every push to main (CLAUDE.md Part F).
+# One-time setup: repository Settings > Pages > Build and deployment > Source = "GitHub Actions".
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deployment at a time; never cancel a deployment that is already running.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build web app
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build the TeaVM web app
+        run: ./gradlew teavm:build
+
+      - name: Upload the web app
+        uses: actions/upload-pages-artifact@v5
+        with:
+          # Output of gdx_teavm_web_wasm_release_build (verified locally).
+          path: teavm/build/dist/wasm/release/webapp
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

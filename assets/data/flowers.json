@@ -1,0 +1,18 @@
+{
+  "flowers": [
+    { "id": "dandelion", "displayName": "Dandelion", "bloomSeasons": ["SPRING"],
+      "nectarPerDayPerSize": 8, "potential": "LOW", "factId": null },
+    { "id": "apple_blossom", "displayName": "Apple Blossom", "bloomSeasons": ["SPRING"],
+      "nectarPerDayPerSize": 12, "potential": "HIGH", "factId": null },
+    { "id": "clover", "displayName": "White Clover", "bloomSeasons": ["SPRING", "SUMMER"],
+      "nectarPerDayPerSize": 10, "potential": "MEDIUM", "factId": null },
+    { "id": "pumpkin", "displayName": "Pumpkin", "bloomSeasons": ["SUMMER"],
+      "nectarPerDayPerSize": 14, "potential": "HIGH", "factId": null },
+    { "id": "wild_bergamot", "displayName": "Wild Bergamot", "bloomSeasons": ["SUMMER"],
+      "nectarPerDayPerSize": 10, "potential": "MEDIUM", "factId": null },
+    { "id": "goldenrod", "displayName": "Goldenrod", "bloomSeasons": ["FALL"],
+      "nectarPerDayPerSize": 12, "potential": "HIGH", "factId": null },
+    { "id": "new_england_aster", "displayName": "New England Aster", "bloomSeasons": ["FALL"],
+      "nectarPerDayPerSize": 10, "potential": "MEDIUM", "factId": null }
+  ]
+}
