@@ -1,5 +1,5 @@
 package com.michiganecodata.beestinction.sim.colony;
-
+import java.util.Arrays;
 /**
  * OVERVIEW:      Worker bees stored as counts by age in days (never as individual objects). Used for the bees
  *                in the hive and for each forager group. Ages run from 0 to lifespanDays-1. At the start of each
@@ -42,9 +42,9 @@ public final class AgeHistogram implements AgeHistogramView {
      * EFFECTS:  Returns the number of living bees: the sum of every age cohort plus the dying pool.
      */
     @Override
+    // complete
     public int total() {
-        // TODO(human): implement per RME above.
-        return 0;
+        return Arrays.stream(counts).sum() + dying;
     }
 
     /**
@@ -54,9 +54,15 @@ public final class AgeHistogram implements AgeHistogramView {
      *           The dying pool is not included.
      */
     @Override
+    // complete
     public int count(int age) {
-        // TODO(human): implement per RME above.
-        return 0;
+
+        // safety net
+        if (counts.length - 1 < age || age < 0){
+            return 0;
+        }
+        // returns number of bees of that age
+        return counts[age];
     }
 
     /**
